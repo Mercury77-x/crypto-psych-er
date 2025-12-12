@@ -1,21 +1,20 @@
+import { Twitter } from "lucide-react"
+
 export function Footer() {
   return (
-    <footer className="border-t bg-background/60 px-6 py-10">
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <p className="font-medium text-foreground">Crypto Psychiatrist</p>
-        <div className="flex flex-wrap gap-4">
-          <a className="hover:text-foreground" href="mailto:hello@example.com">
-            联系我们
-          </a>
-          <a className="hover:text-foreground" href="#">
-            隐私政策
-          </a>
-          <a className="hover:text-foreground" href="#">
-            使用条款
-          </a>
-        </div>
-      </div>
+    <footer className="absolute bottom-0 left-0 right-0 py-6 text-center z-10">
+      <p className="text-sm font-mono text-muted-foreground flex items-center justify-center gap-2">
+        Designed by
+        <a
+          href="https://twitter.com/moqiuli77"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-secondary hover:text-secondary/80 transition-colors text-glow-subtle"
+        >
+          <Twitter className="w-4 h-4" />
+          Mercury77 (@moqiuli77)
+        </a>
+      </p>
     </footer>
-  );
+  )
 }
-
