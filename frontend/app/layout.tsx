@@ -6,12 +6,16 @@ import "./globals.css"
 const orbitron = Orbitron({
   subsets: ["latin"],
   variable: "--font-orbitron",
+  display: "swap",
+  fallback: ["system-ui", "arial"],
 })
 
 const shareTechMono = Share_Tech_Mono({
   subsets: ["latin"],
   weight: "400",
   variable: "--font-share-tech-mono",
+  display: "swap",
+  fallback: ["monospace", "Courier New"],
 })
 
 export const metadata: Metadata = {
