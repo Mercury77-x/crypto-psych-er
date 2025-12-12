@@ -13,15 +13,22 @@ load_dotenv()
 # 配置 Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 优先尝试 Gemini 3 Pro (更毒舌，更智能)
+# 模型选择策略（按优先级尝试）
+# 1. 优先使用 Gemini 3 Pro Preview (最新，最智能)
+# 2. 降级到 Gemini 2.5 Flash (速度快，质量好)
+# 3. 最后回退到 Gemini 1.5 Flash (保底)
 try:
     model = genai.GenerativeModel('gemini-3-pro-preview')
-    print("[INFO] 使用 Gemini 3 Pro Preview 模型")
+    print("[INFO] ✅ 使用 Gemini 3 Pro Preview 模型")
 except Exception as e:
-    # 如果报错，回退到 Flash (速度快，保底)
-    print(f"⚠️ Gemini 3 Pro 初始化失败: {e}，回退到 Flash")
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    print("[INFO] 使用 Gemini 1.5 Flash 模型")
+    print(f"⚠️ Gemini 3 Pro 初始化失败: {e}，尝试降级到 Gemini 2.5 Flash")
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        print("[INFO] ✅ 使用 Gemini 2.5 Flash 模型")
+    except Exception as e2:
+        print(f"⚠️ Gemini 2.5 Flash 初始化失败: {e2}，回退到 Gemini 1.5 Flash")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        print("[INFO] ✅ 使用 Gemini 1.5 Flash 模型")
 
 app = FastAPI()
 
