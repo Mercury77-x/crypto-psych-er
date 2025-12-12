@@ -51,14 +51,27 @@ export function HeroSection() {
       let apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
       // 移除末尾的斜杠
       apiUrl = apiUrl.replace(/\/$/, "")
-      console.log("上传到 API:", `${apiUrl}/analyze`)
+      const fullUrl = `${apiUrl}/analyze`
+      console.log("上传到 API:", fullUrl)
+      console.log("环境变量 NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL)
 
-      const resp = await fetch(`${apiUrl}/analyze`, {
-        method: "POST",
-        body: formData,
-      })
-
-      console.log("响应状态:", resp.status, resp.statusText)
+      let resp: Response
+      try {
+        resp = await fetch(fullUrl, {
+          method: "POST",
+          body: formData,
+        })
+        console.log("响应状态:", resp.status, resp.statusText)
+      } catch (fetchError) {
+        console.error("Fetch 错误:", fetchError)
+        // 处理网络错误（CORS、连接失败等）
+        if (fetchError instanceof TypeError && fetchError.message.includes("Failed to fetch")) {
+          throw new Error(
+            `无法连接到后端服务器。请检查：\n1. 后端服务是否正常运行\n2. API URL 是否正确配置（当前: ${apiUrl})\n3. 是否存在 CORS 问题`
+          )
+        }
+        throw fetchError
+      }
 
       if (!resp.ok) {
         let errorMessage = "上传失败，请稍后再试"
@@ -86,7 +99,12 @@ export function HeroSection() {
       })
     } catch (e) {
       console.error("上传错误:", e)
-      const errorMessage = e instanceof Error ? e.message : "上传失败，请稍后再试"
+      let errorMessage = "上传失败，请稍后再试"
+      if (e instanceof Error) {
+        errorMessage = e.message
+      } else if (typeof e === "string") {
+        errorMessage = e
+      }
       setError(errorMessage)
     } finally {
       setIsLoading(false)
