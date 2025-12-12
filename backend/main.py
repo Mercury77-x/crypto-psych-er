@@ -20,14 +20,8 @@ try:
 except Exception as e:
     # 如果报错，回退到 Flash (速度快，保底)
     print(f"⚠️ Gemini 3 Pro 初始化失败: {e}，回退到 Flash")
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("[INFO] 使用 Gemini 1.5 Flash 模型")
-    except Exception as e2:
-        # 最后回退到 Pro
-        print(f"⚠️ Gemini Flash 初始化失败: {e2}，回退到 Pro")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        print("[INFO] 使用 Gemini 1.5 Pro 模型")
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    print("[INFO] 使用 Gemini 1.5 Flash 模型")
 
 app = FastAPI()
 
