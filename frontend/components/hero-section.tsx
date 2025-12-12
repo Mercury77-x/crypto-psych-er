@@ -73,21 +73,26 @@ export function HeroSection() {
         throw fetchError
       }
 
+      // 先读取响应文本（只能读取一次）
+      const responseText = await resp.text()
+      
       if (!resp.ok) {
         let errorMessage = "上传失败，请稍后再试"
         try {
-          const data = await resp.json()
+          // 尝试解析为 JSON
+          const data = JSON.parse(responseText)
           errorMessage = data?.detail || data?.error || errorMessage
           console.error("API 错误响应:", data)
         } catch {
-          const text = await resp.text()
-          console.error("API 错误文本:", text)
-          errorMessage = text || errorMessage
+          // 如果不是 JSON，直接使用文本
+          console.error("API 错误文本:", responseText)
+          errorMessage = responseText || errorMessage
         }
         throw new Error(errorMessage)
       }
 
-      const result = await resp.json()
+      // 解析成功响应的 JSON
+      const result = JSON.parse(responseText)
       console.log("上传成功，结果:", result)
       
       if (typeof window !== "undefined") {
