@@ -146,11 +146,22 @@ async def analyze_csv(file: UploadFile = File(...)):
         """
 
         # 3. 调用 Gemini
+        print(f"[DEBUG] 调用 Gemini API，数据: {data}")
         response = model.generate_content(system_prompt)
+        print(f"[DEBUG] Gemini 响应类型: {type(response)}")
+        print(f"[DEBUG] Gemini 响应文本长度: {len(response.text) if response.text else 0}")
+        
+        if not response.text:
+            raise ValueError("Gemini API 返回了空响应")
+        
         return {"report": response.text, "raw_data": data}
 
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[ERROR] 处理请求时出错: {str(e)}")
+        print(f"[ERROR] 错误堆栈: {error_trace}")
+        return {"error": str(e), "traceback": error_trace}
 
 if __name__ == "__main__":
     import uvicorn

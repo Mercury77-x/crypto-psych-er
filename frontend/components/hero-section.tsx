@@ -106,15 +106,32 @@ export function HeroSection() {
       let result
       try {
         result = JSON.parse(responseText)
+        console.log("上传成功，结果:", result)
+        console.log("结果类型:", typeof result)
+        console.log("是否有 report 字段:", "report" in result)
+        console.log("是否有 error 字段:", "error" in result)
+        console.log("响应大小:", responseText.length, "字节")
       } catch (parseError) {
         console.error("JSON 解析失败:", parseError)
         console.error("响应内容:", responseText.substring(0, 500))
         throw new Error("服务器返回了无效的 JSON 响应")
       }
-      console.log("上传成功，结果:", result)
+      
+      // 检查是否有错误
+      if (result.error) {
+        console.error("后端返回错误:", result.error)
+        throw new Error(`后端处理失败: ${result.error}`)
+      }
+      
+      // 检查是否有 report 字段
+      if (!result.report) {
+        console.warn("响应中没有 report 字段，完整响应:", result)
+        throw new Error("服务器返回的数据格式不正确，缺少 report 字段")
+      }
       
       if (typeof window !== "undefined") {
         localStorage.setItem("analysisData", JSON.stringify(result))
+        console.log("数据已保存到 localStorage")
       }
 
       startTransition(() => {

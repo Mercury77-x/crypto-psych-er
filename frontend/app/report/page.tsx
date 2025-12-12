@@ -43,17 +43,24 @@ export default function ReportPage() {
     if (typeof window === "undefined") return;
     
     const stored = localStorage.getItem("analysisData");
+    console.log("从 localStorage 读取数据:", stored ? "有数据" : "无数据");
+    
     if (!stored) {
       // 如果没有数据，重定向到首页
+      console.log("没有数据，重定向到首页");
       router.push("/");
       return;
     }
 
     try {
       const parsed = JSON.parse(stored) as AnalysisResult;
+      console.log("解析后的数据:", parsed);
+      console.log("report 字段:", parsed.report ? `有 (${parsed.report.length} 字符)` : "无");
+      console.log("raw_data 字段:", parsed.raw_data ? "有" : "无");
       setData(parsed);
-    } catch {
+    } catch (parseError) {
       // 如果解析失败，也重定向
+      console.error("解析 localStorage 数据失败:", parseError);
       router.push("/");
     } finally {
       setIsLoading(false);
