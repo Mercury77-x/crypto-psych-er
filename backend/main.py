@@ -25,6 +25,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Crypto Psychiatrist API is running"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 @app.post("/analyze")
 async def analyze_csv(file: UploadFile = File(...)):
     if not file.filename.endswith('.csv'):

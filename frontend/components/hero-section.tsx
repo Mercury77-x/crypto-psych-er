@@ -47,7 +47,10 @@ export function HeroSection() {
       const formData = new FormData()
       formData.append("file", file)
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+      // 确保 API URL 正确
+      let apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+      // 移除末尾的斜杠
+      apiUrl = apiUrl.replace(/\/$/, "")
       console.log("上传到 API:", `${apiUrl}/analyze`)
 
       const resp = await fetch(`${apiUrl}/analyze`, {
