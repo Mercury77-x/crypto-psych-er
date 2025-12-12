@@ -1,14 +1,15 @@
 [service]
-name = "crypto-psychiatrist"
+name = "crypto-psych-er"
 
+# 后端服务配置
 [[services]]
 name = "backend"
 dir = "backend"
 type = "python"
-command = "sh -c 'uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}'"
+command = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"
 
+# 前端服务配置
 [[services]]
 name = "frontend"
 dir = "frontend"
 type = "nextjs"
-
