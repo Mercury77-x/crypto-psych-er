@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
@@ -200,8 +202,34 @@ export default function ReportPage() {
           {/* Markdown 报告内容 */}
           <div className="rounded-2xl border bg-card/70 p-6 shadow-sm">
             <h2 className="text-lg font-semibold mb-4">诊断报告</h2>
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown>{data.report ?? "暂无报告文本"}</ReactMarkdown>
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-bold prose-p:leading-relaxed prose-strong:text-foreground prose-code:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-muted prose-pre:border">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={{
+                  code: ({ node, inline, className, children, ...props }: any) => {
+                    if (inline) {
+                      return (
+                        <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono text-primary" {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                    return (
+                      <pre className="bg-muted p-4 rounded-lg overflow-x-auto border">
+                        <code className="text-sm font-mono" {...props}>
+                          {children}
+                        </code>
+                      </pre>
+                    );
+                  },
+                  pre: ({ children }: any) => {
+                    return <>{children}</>;
+                  },
+                }}
+              >
+                {data.report ?? "暂无报告文本"}
+              </ReactMarkdown>
             </div>
           </div>
         </div>
