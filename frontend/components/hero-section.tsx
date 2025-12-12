@@ -76,6 +76,17 @@ export function HeroSection() {
       // 先读取响应文本（只能读取一次）
       const responseText = await resp.text()
       
+      // 检查是否是 HTML 响应（说明请求被发送到了错误的地方）
+      const contentType = resp.headers.get("content-type") || ""
+      if (contentType.includes("text/html") || responseText.trim().startsWith("<!DOCTYPE html")) {
+        console.error("收到 HTML 响应，说明 API URL 配置错误")
+        throw new Error(
+          `API URL 配置错误：请求被发送到了前端服务器而不是后端服务器。\n` +
+          `当前 API URL: ${apiUrl}\n` +
+          `请检查环境变量 NEXT_PUBLIC_API_URL 是否正确配置为后端服务地址。`
+        )
+      }
+      
       if (!resp.ok) {
         let errorMessage = "上传失败，请稍后再试"
         try {
@@ -84,15 +95,22 @@ export function HeroSection() {
           errorMessage = data?.detail || data?.error || errorMessage
           console.error("API 错误响应:", data)
         } catch {
-          // 如果不是 JSON，直接使用文本
-          console.error("API 错误文本:", responseText)
-          errorMessage = responseText || errorMessage
+          // 如果不是 JSON，直接使用文本（截取前 200 字符避免过长）
+          console.error("API 错误文本:", responseText.substring(0, 200))
+          errorMessage = responseText.substring(0, 200) || errorMessage
         }
         throw new Error(errorMessage)
       }
 
       // 解析成功响应的 JSON
-      const result = JSON.parse(responseText)
+      let result
+      try {
+        result = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error("JSON 解析失败:", parseError)
+        console.error("响应内容:", responseText.substring(0, 500))
+        throw new Error("服务器返回了无效的 JSON 响应")
+      }
       console.log("上传成功，结果:", result)
       
       if (typeof window !== "undefined") {
