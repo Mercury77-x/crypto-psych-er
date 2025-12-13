@@ -29,11 +29,11 @@ class TradeAnalyzer:
         
         # 2. 列名映射字典 (兼容中文、英文、拼写错误)
         column_mapping = {
-            'Symbol': ['Symbol', 'symbol', 'Instrument', 'Pair', 'Contract', '币种', '交易对'],
+            'Symbol': ['Symbol', 'symbol', 'Instrument', 'Pair', 'Contract', '币种', '交易对', 'Market'],
             'Side': ['Side', 'Direction', 'Type', '方向', '买卖', 'BS', 'Position Side'],
             'Size': ['Size', 'Amount', 'Quantity', 'Qty', 'Vol', '数量', '张数', 'Exec Qty', 'Max Open Interest'], 
             'Entry Price': ['Entry Price', 'Avg. Open Price', 'Avg Entry Price', 'Open Price', '开仓均价', '开仓价', 'EntryPrice'],
-            # 🚨 包含您 CSV 里的特殊拼写错误 'Pirce'
+            # 🚨 包含您 CSV 里的特殊拼写错误 'Pirce' 以及常见的变体
             'Avg. Close Price': [
                 'Avg. Close Pirce', 
                 'Avg. Close Price', 'Close Price', 'Exit Price', 'Avg Price', 
@@ -96,10 +96,13 @@ class TradeAnalyzer:
         # 持仓时长 (分钟)
         df['duration_minutes'] = (df['Closed'] - df['Opened']).dt.total_seconds().fillna(0) / 60
         
-        # 估算手续费 (双边万五)
+        # 估算手续费 (双边万五: 0.0005)
+        # 很多平台手续费没有包含在 PNL 里，所以这里手动估算一个参考值
         df['est_fee'] = (df['Entry Price'] + df['Avg. Close Price']) * df['Closed Vol.'] * 0.0005
         
-        # 净利润 = 毛利 - 手续费
+        # 净利润 = 毛利 (Closing PNL) - 估算手续费
+        # 如果 CSV 里本身 Closing PNL 已经是净利润，这里可能会重复扣除，
+        # 但对于大多数交易所导出的 "Realized PNL" 来说，通常是不含手续费的毛利。
         df['Net PnL'] = df['Closing PNL'] - df['est_fee']
         
         # 补充时间特征 (星期几、小时)
@@ -158,25 +161,27 @@ class TradeAnalyzer:
             "short": {"count": len(shorts), "pnl": shorts['Net PnL'].sum() if not shorts.empty else 0}
         }
 
-        # --- 4. 持仓时间分布 (Duration) ---
+        # --- 4. 持仓时间分类 (Duration) ---
+        # 关键修正：为了方便前端绑定，这里使用简单的英文 Key，前端再映射回中文显示
         bins = [0, 5, 15, 60, 240, float('inf')]
-        labels = ['剥头皮 (<5m)', '超短线 (5-15m)', '日内短线 (15-60m)', '日内波段 (1-4h)', '长线 (>4h)']
-        df['duration_type'] = pd.cut(df['duration_minutes'], bins=bins, labels=labels)
+        # 对应：剥头皮, 超短线, 日内短线, 日内波段, 长线
+        keys = ['less_5m', '5m_15m', '15m_60m', '1h_4h', 'more_4h'] 
+        df['duration_type'] = pd.cut(df['duration_minutes'], bins=bins, labels=keys)
         
         duration_stats = {}
-        for label in labels:
-            sub_df = df[df['duration_type'] == label]
+        for key in keys:
+            sub_df = df[df['duration_type'] == key]
             if not sub_df.empty:
                 top_coins = sub_df.groupby('Symbol')['Net PnL'].sum().sort_values(ascending=False).head(5).index.tolist()
                 win_rate_sub = len(sub_df[sub_df['Net PnL'] > 0]) / len(sub_df)
-                duration_stats[label] = {
+                duration_stats[key] = {
                     "count": len(sub_df),
                     "pnl": sub_df['Net PnL'].sum(),
                     "win_rate": win_rate_sub,
                     "top_coins": top_coins
                 }
             else:
-                 duration_stats[label] = {"count": 0, "pnl": 0, "win_rate": 0, "top_coins": []}
+                 duration_stats[key] = {"count": 0, "pnl": 0, "win_rate": 0, "top_coins": []}
 
         # --- 5. 交易频率 & 时薪 ---
         if 'Closed' in df.columns and total_trades > 0:
