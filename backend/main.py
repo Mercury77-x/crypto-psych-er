@@ -156,14 +156,35 @@ def format_metrics_for_llm(data):
     """
 
 def init_model():
-    candidates = ['gemini-1.5-pro', 'gemini-1.5-flash']
+    # 按照"能力由强到弱"和"版本由新到旧"的顺序排列
+    # 优先尝试 Gemini 3 Pro (最新最强)
+    # 如果失败，尝试 Gemini 2.5 Pro/Flash (当前主流稳定版)
+    # 最后尝试 Gemini 2.0 Flash (上一代稳定版)
+    candidates = [
+        'gemini-3-pro-preview',   # 最新一代：推理能力最强
+        'gemini-2.5-pro',         # 次新旗舰：非常稳定
+        'gemini-2.5-flash',       # 次新高速：速度快，成本低
+        'gemini-2.0-flash',       # 旧版高速：广泛兼容
+        'gemini-1.5-pro-latest'   # 最后的兜底 (如果还需要的话)
+    ]
+    
     for m in candidates:
         try:
             model = genai.GenerativeModel(m)
+            # 简单的测试调用，确保模型真的可用（可选）
+            # model.generate_content("test") 
+            print(f"[INFO] ✅ 模型初始化成功: {m}")
             return model, m
-        except:
+        except Exception as e:
+            # 打印错误方便调试，但不要中断程序
+            print(f"[WARN] ⚠️ 无法加载 {m}: {e}")
             continue
-    return genai.GenerativeModel('gemini-1.5-flash'), 'gemini-1.5-flash'
+    
+    # 如果所有尝试都失败，返回一个目前最通用的保底模型
+    # 建议升级保底为 2.5-flash，因为 1.5 可能已停止维护
+    fallback_model = 'gemini-2.5-flash'
+    print(f"[WARN] ⚠️ 所有候选模型都失败，回退到保底模型: {fallback_model}")
+    return genai.GenerativeModel(fallback_model), fallback_model
 
 model, current_model_name = init_model()
 
