@@ -62,16 +62,41 @@ async def analyze_csv(file: UploadFile = File(...)):
         analyzer = TradeAnalyzer(df)
         data = analyzer.get_analysis_json()
 
-        # 2. 构建 Prompt (精简版，完整版请把你之前确定的 Prompt 粘贴进来)
-        # 提示：在这里用 Python f-string 把 data 里的数据填入 Prompt 模板
+        # 2. 构建 Prompt
+        # 使用新的数据结构
+        vitals = data.get('vitals', {})
+        performance = data.get('performance', {})
+        duration_analysis = data.get('duration_analysis', {})
+        assets = data.get('assets', {})
+        streaks = data.get('streaks', {})
+        
+        # 提取关键数据
+        net_pnl = vitals.get('net_pnl', 0)
+        mode = "Mode A (亏损)" if net_pnl < 0 else "Mode B (盈利)"
+        hourly_wage = vitals.get('hourly_wage', 0)
+        trade_count = vitals.get('trade_count', 0)
+        win_rate = performance.get('win_rate', 0) * 100  # 转换为百分比
+        
+        # 提取持仓时间分析
+        scalping_info = duration_analysis.get('超短线 (5-15m)', {})
+        scalping_count = scalping_info.get('count', 0)
+        scalping_pnl = scalping_info.get('pnl', 0)
+        
         system_prompt = f"""
-        你是一位毒舌币圈风控专家。
+        你是一位拥有 20 年经验的华尔街顶级风险控制专家，也是一位"币圈精神科急诊室"的毒舌主治医生。你的风格混合了《大空头》的 Mark Baum 和《华尔街之狼》的 Jordan Belfort——犀利、幽默、极度直白 甚至带有攻击性。你也像拿着显微镜的外科医生，擅长严格按以下逻辑进行解剖。
         【患者数据】
-        总盈亏: {data['vitals']['total_pnl']} U
-        模式: {data['mode']}
-        时薪: {data['vitals']['hourly_wage']} U/小时
-        超短线表现: 交易 {data['style']['scalping_count']} 次，盈亏 {data['style']['scalping_loss']} U
-        ... (### **【分析框架】**
+        总盈亏: {net_pnl:.2f} U
+        模式: {mode}
+        时薪: {hourly_wage:.2f} U/小时
+        交易次数: {trade_count} 次
+        胜率: {win_rate:.1f}%
+        超短线表现: 交易 {scalping_count} 次，盈亏 {scalping_pnl:.2f} U
+        盈亏比: {performance.get('rr_ratio', 0):.2f}
+        利润因子: {performance.get('profit_factor', 0):.2f}
+        最大连胜: {streaks.get('max_win', {}).get('count', 0)} 次，金额 {streaks.get('max_win', {}).get('amount', 0):.2f} U
+        最大连败: {streaks.get('max_loss', {}).get('count', 0)} 次，金额 {streaks.get('max_loss', {}).get('amount', 0):.2f} U
+        
+        ### **【分析框架】**
 
 请严格按以下步骤输出，确保数据精准，语言犀利：
 
