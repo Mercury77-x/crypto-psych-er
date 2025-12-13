@@ -6,96 +6,87 @@ class TradeAnalyzer:
         self.df = self._preprocess(df)
 
     def _preprocess(self, df):
-        # 1. 清洗列名 (去空格，转小写，方便匹配)
+        """
+        数据预处理：清洗列名、智能映射、计算基础字段
+        """
+        # 1. 清洗列名 (去空格)
         df.columns = [c.strip() for c in df.columns]
         
-        # 2. 定义列名映射字典 (Universal Mapper)
-        # 格式: '内部标准名': ['可能的CSV列名1', '可能的CSV列名2', ...]
+        # 2. 定义列名映射 (Universal Mapper)
+        # 核心修复：加入了您文件里特殊的 'Avg. Close Pirce' (带拼写错误的)
         column_mapping = {
-            'Symbol': ['Symbol', 'Instrument', 'Pair', 'Contract', '币种', '交易对'],
-            'Side': ['Side', 'Direction', 'Type', '方向', '买卖'],
-            'Size': ['Size', 'Amount', 'Quantity', 'Qty', 'Vol', '数量', '张数'],
-            'Entry Price': ['Entry Price', 'Avg. Open Price', 'Avg Entry Price', 'Open Price', 'Price', '开仓均价', '开仓价'],
-            'Avg. Close Price': ['Avg. Close Price', 'Close Price', 'Exit Price', 'Price', 'Avg Price', '平仓均价', '平仓价', '成交均价'],
+            'Symbol': ['Symbol', 'symbol', 'Instrument', 'Pair', 'Contract', '币种', '交易对', 'Market'],
+            'Side': ['Side', 'Direction', 'Type', '方向', '买卖', 'BS', 'Position Side'],
+            'Size': ['Size', 'Amount', 'Quantity', 'Qty', 'Vol', '数量', '张数', 'Exec Qty', 'Max Open Interest'], 
+            'Entry Price': ['Entry Price', 'Avg. Open Price', 'Avg Entry Price', 'Open Price', '开仓均价', '开仓价', 'EntryPrice'],
+            'Avg. Close Price': [
+                'Avg. Close Pirce', # 您的 CSV 特有的拼写错误
+                'Avg. Close Price', 
+                'Close Price', 
+                'Exit Price', 
+                'Avg Price', 
+                '平仓均价', 
+                '平仓价', 
+                '成交均价', 
+                'Price', 
+                'Fill Price'
+            ],
             'Closed Vol.': ['Closed Vol.', 'Closed Volume', 'Size', 'Qty', 'Amount', '成交量', '平仓数量'],
-            'Closing PNL': ['Closing PNL', 'Realized PNL', 'PnL', 'Profit', 'Net Profit', '已实现盈亏', '盈亏'],
-            'Opened': ['Opened', 'Open Time', 'Date', 'Time', 'Created Time', '开仓时间', '时间'],
+            'Closing PNL': ['Closing PNL', 'Realized PNL', 'PnL', 'Profit', 'Net Profit', '已实现盈亏', '盈亏', 'Realized Profit'],
+            'Opened': ['Opened', 'Open Time', 'Date', 'Time', 'Created Time', '开仓时间', '时间', 'Create Time'],
             'Closed': ['Closed', 'Close Time', 'Update Time', 'Finished Time', '平仓时间', '更新时间']
         }
 
         # 3. 智能重命名
-        # 遍历我们的标准列名
         for standard_col, aliases in column_mapping.items():
-            # 如果标准列名已经在 CSV 里了，跳过
-            if standard_col in df.columns:
-                continue
+            if standard_col in df.columns: continue
             
-            # 否则，去 aliases 里找，看 CSV 里有没有对应的别名
-            found = False
             for alias in aliases:
-                # 尝试精准匹配
-                if alias in df.columns:
-                    df.rename(columns={alias: standard_col}, inplace=True)
-                    found = True
+                # 优先尝试精准匹配 (解决大小写问题)
+                match_col = next((c for c in df.columns if c.lower() == alias.lower()), None)
+                if match_col:
+                    df.rename(columns={match_col: standard_col}, inplace=True)
                     break
-                # 尝试忽略大小写匹配
-                if not found:
-                    for csv_col in df.columns:
-                        if csv_col.lower() == alias.lower():
-                            df.rename(columns={csv_col: standard_col}, inplace=True)
-                            found = True
-                            break
-                if found: break
-            
-            # 如果找了一圈还是没找到，且该列不是必须的，可以给默认值
-            # 注意：Entry Price, Closing PNL 等是必须的，找不到会报错，这属于正常风控
 
-        # --- 4. 容错处理 (补全逻辑) ---
+        # --- 4. 容错处理 ---
         
-        # 容错 A: 如果找不到 'Closed Vol.' 但有 'Size'，就用 Size
+        # 容错: 确保 'Closed Vol.' 有值，如果没有则用 Size 替补
         if 'Closed Vol.' not in df.columns and 'Size' in df.columns:
              df['Closed Vol.'] = df['Size']
 
-        # 容错 B: 如果找不到 'Avg. Close Price'，这很致命。
-        # 尝试查看是否有 'Price' 列，如果有，就把它当做 Close Price
-        if 'Avg. Close Price' not in df.columns and 'Price' in df.columns:
-            df['Avg. Close Price'] = df['Price']
-
-        # 容错 C: 确保时间列是时间格式
+        # 格式化时间
         if 'Opened' in df.columns:
             df['Opened'] = pd.to_datetime(df['Opened'], errors='coerce')
         if 'Closed' in df.columns:
             df['Closed'] = pd.to_datetime(df['Closed'], errors='coerce')
         
-        # 如果 'Closed' 时间缺失，用 'Opened' 顶替（避免计算持仓时间报错）
+        # 如果没有平仓时间，用开仓时间顶替（防止计算报错）
         if 'Closed' not in df.columns and 'Opened' in df.columns:
             df['Closed'] = df['Opened']
 
-        # --- 5. 计算逻辑 (保持不变) ---
-        
-        # 持仓时长 (分钟)
-        # fillna(0) 防止时间解析失败导致报错
-        df['duration_minutes'] = (df['Closed'] - df['Opened']).dt.total_seconds().fillna(0) / 60
-        
-        # 估算手续费
-        # 确保列都是数字类型
-        cols_to_numeric = ['Entry Price', 'Avg. Close Price', 'Closed Vol.', 'Closing PNL']
-        for c in cols_to_numeric:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-
-        # 必须确保这几列存在，否则 analyzer 无法工作
+        # --- 5. 关键检查 ---
         required_cols = ['Entry Price', 'Avg. Close Price', 'Closed Vol.', 'Closing PNL']
         missing = [c for c in required_cols if c not in df.columns]
+        
         if missing:
-            raise ValueError(f"CSV 格式错误，缺少关键列: {missing}。请检查 CSV 表头。")
+            # 详细报错，帮助排查
+            raise ValueError(f"缺少关键列: {missing}。CSV里实际有的列名是: {list(df.columns)}")
 
+        # --- 6. 后续计算 ---
+        cols_to_numeric = ['Entry Price', 'Avg. Close Price', 'Closed Vol.', 'Closing PNL']
+        for c in cols_to_numeric:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+
+        # 计算持仓时间 (分钟)
+        df['duration_minutes'] = (df['Closed'] - df['Opened']).dt.total_seconds().fillna(0) / 60
+        
+        # 计算估算手续费 (双边 0.05%)
         df['est_fee'] = (df['Entry Price'] + df['Avg. Close Price']) * df['Closed Vol.'] * 0.0005
         
-        # 净利润
+        # 计算净利润
         df['Net PnL'] = df['Closing PNL'] - df['est_fee']
         
-        # 星期几 / 小时
+        # 提取时间特征
         if 'Opened' in df.columns:
             df['day_name'] = df['Opened'].dt.day_name()
             df['open_hour'] = df['Opened'].dt.hour
@@ -103,20 +94,19 @@ class TradeAnalyzer:
             df['day_name'] = 'Unknown'
             df['open_hour'] = 0
             
-        # 确保 Side 存在
-        if 'Side' not in df.columns:
-            df['Side'] = 'Long' # 默认值
-        
-        # 确保 Symbol 存在
-        if 'Symbol' not in df.columns:
-            df['Symbol'] = 'Unknown'
+        # 补全其他字段
+        if 'Side' not in df.columns: df['Side'] = 'Long'
+        if 'Symbol' not in df.columns: df['Symbol'] = 'Unknown'
 
         return df
 
     def get_analysis_json(self):
+        """
+        计算所有 22 个核心指标，返回 JSON 格式数据
+        """
         df = self.df
         
-        # --- 1. 基础盈亏 ---
+        # --- 1. 基础盈亏 (Vitals) ---
         total_pnl = df['Net PnL'].sum()
         gross_pnl = df['Closing PNL'].sum()
         total_fees = df['est_fee'].sum()
@@ -128,11 +118,12 @@ class TradeAnalyzer:
         # 总交易额 Volume
         total_volume = ((df['Entry Price'] + df['Avg. Close Price']) * df['Closed Vol.']).sum()
 
-        # --- 2. 胜率与风控 ---
+        # --- 2. 胜率与风控 (Performance) ---
         total_trades = len(df)
         winning_trades = df[df['Net PnL'] > 0]
         losing_trades = df[df['Net PnL'] < 0]
         
+        # 胜率
         win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
         
         # 盈亏比
@@ -146,16 +137,16 @@ class TradeAnalyzer:
         # 期望值
         expectancy = df['Net PnL'].mean()
 
-        # --- 3. 多空偏好 ---
-        longs = df[df['Side'].str.lower().isin(['long', 'buy'])]
-        shorts = df[df['Side'].str.lower().isin(['short', 'sell'])]
+        # --- 3. 多空偏好 (Direction) ---
+        longs = df[df['Side'].str.lower().isin(['long', 'buy'])] if 'Side' in df.columns else pd.DataFrame()
+        shorts = df[df['Side'].str.lower().isin(['short', 'sell'])] if 'Side' in df.columns else pd.DataFrame()
         
         direction_stats = {
             "long": {"count": len(longs), "pnl": longs['Net PnL'].sum() if not longs.empty else 0},
             "short": {"count": len(shorts), "pnl": shorts['Net PnL'].sum() if not shorts.empty else 0}
         }
 
-        # --- 4. 持仓时间分类 ---
+        # --- 4. 持仓时间分类 (Duration Analysis) ---
         bins = [0, 5, 15, 60, 240, float('inf')]
         labels = ['剥头皮 (<5m)', '超短线 (5-15m)', '日内短线 (15-60m)', '日内波段 (1-4h)', '长线 (>4h)']
         df['duration_type'] = pd.cut(df['duration_minutes'], bins=bins, labels=labels)
@@ -164,6 +155,7 @@ class TradeAnalyzer:
         for label in labels:
             sub_df = df[df['duration_type'] == label]
             if not sub_df.empty:
+                # 每个时间段的 Top 5 币种
                 top_coins = sub_df.groupby('Symbol')['Net PnL'].sum().sort_values(ascending=False).head(5).index.tolist()
                 win_rate_sub = len(sub_df[sub_df['Net PnL'] > 0]) / len(sub_df)
                 duration_stats[label] = {
@@ -185,7 +177,7 @@ class TradeAnalyzer:
         total_hours = df['duration_minutes'].sum() / 60
         hourly_wage = total_pnl / total_hours if total_hours > 0 else 0
         
-        # --- 6. 资产偏好 ---
+        # --- 6. 资产偏好 (Assets) ---
         if total_trades > 0:
             asset_grp = df.groupby('Symbol').agg({'Net PnL': 'sum', 'Opened': 'count'}).reset_index()
             asset_win_rates = []
@@ -202,53 +194,45 @@ class TradeAnalyzer:
             top_5_assets = []
             bottom_5_assets = []
 
-        # --- 7. 连胜/连败 ---
+        # --- 7. 连胜/连败 (Streaks) ---
+        max_loss_streak = 0
+        max_loss_amount = 0
+        loss_culprits = []
+        max_win_streak = 0
+        max_win_amount = 0
+        win_heroes = []
+
         if total_trades > 0:
             df_sorted = df.sort_values('Closed')
             df_sorted['result_sign'] = np.sign(df_sorted['Net PnL'])
+            # 标记连续段
             df_sorted['group_id'] = (df_sorted['result_sign'] != df_sorted['result_sign'].shift()).cumsum()
             streak_groups = df_sorted.groupby(['group_id', 'result_sign'])
             
-            max_loss_streak = 0
-            max_loss_amount = 0
-            loss_culprits = []
-            max_win_streak = 0
-            max_win_amount = 0
-            win_heroes = []
-
             for (gid, sign), group in streak_groups:
-                if sign == -1: 
+                if sign == -1: # 连败
                     if len(group) > max_loss_streak:
                         max_loss_streak = len(group)
                         max_loss_amount = group['Net PnL'].sum()
                         loss_culprits = group.groupby('Symbol')['Net PnL'].sum().sort_values().head(3).index.tolist()
-                elif sign == 1: 
+                elif sign == 1: # 连胜
                     if len(group) > max_win_streak:
                         max_win_streak = len(group)
                         max_win_amount = group['Net PnL'].sum()
                         win_heroes = group.groupby('Symbol')['Net PnL'].sum().sort_values(ascending=False).head(3).index.tolist()
-        else:
-            max_loss_streak = 0
-            max_loss_amount = 0
-            loss_culprits = []
-            max_win_streak = 0
-            max_win_amount = 0
-            win_heroes = []
 
-        # --- 8. 时间分析 ---
+        # --- 8. 时间分析 (Timing) ---
         hourly_pnl = df.groupby('open_hour')['Net PnL'].sum().to_dict()
         daily_pnl = df.groupby('day_name')['Net PnL'].sum().sort_values(ascending=False)
         best_day = daily_pnl.index[0] if not daily_pnl.empty else "N/A"
         worst_day = daily_pnl.index[-1] if not daily_pnl.empty else "N/A"
 
-        # --- 9. 效率 ---
-        avg_loss_abs = abs(avg_loss) if abs(avg_loss) > 0 else 1
-        # df['pnl_normalized'] = df['Net PnL'] / avg_loss_abs
-        
+        # --- 9. 效率 (Efficiency) ---
+        # 每一单的持仓效率 = |利润| / 持仓时间
         df['efficiency'] = abs(df['Closing PNL']) / df['duration_minutes'].replace(0, 1)
         avg_efficiency = df['efficiency'].mean() if not df.empty else 0
 
-        # --- 组装最终 JSON ---
+        # --- 10. 组装最终 JSON ---
         return {
             "vitals": {
                 "net_pnl": float(total_pnl),
