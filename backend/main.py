@@ -1,8 +1,9 @@
-# backend/main.py
 import os
 import io
+import random
+import json
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 from analyzer import TradeAnalyzer
@@ -10,32 +11,167 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 配置 Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    print("❌ 严重错误: 未找到 GEMINI_API_KEY")
+genai.configure(api_key=api_key)
 
-# 模型选择策略（按优先级尝试）
-# 1. 优先使用 Gemini 3 Pro Preview (最新，最智能)
-# 2. 降级到 Gemini 2.5 Flash (速度快，质量好)
-# 3. 最后回退到 Gemini 1.5 Flash (保底)
-try:
-    model = genai.GenerativeModel('gemini-3-pro-preview')
-    print("[INFO] ✅ 使用 Gemini 3 Pro Preview 模型")
-except Exception as e:
-    print(f"⚠️ Gemini 3 Pro 初始化失败: {e}，尝试降级到 Gemini 2.5 Flash")
-    try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        print("[INFO] ✅ 使用 Gemini 2.5 Flash 模型")
-    except Exception as e2:
-        print(f"⚠️ Gemini 2.5 Flash 初始化失败: {e2}，回退到 Gemini 1.5 Flash")
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("[INFO] ✅ 使用 Gemini 1.5 Flash 模型")
+# ============================================================
+# 1. 标签库 (对应 UI 上的短标签 badges)
+# ============================================================
+TAGS_LIBRARY = [
+    "韭菜", "燃烧的矿机", "慈善赌王", "追涨杀跌小能手", "多巴胺中毒",
+    "杠杆狂魔", "流动性提供者", "反向指标", "止损是什么", "信仰玩家",
+    "全职维权", "被套之王", "归零艺术家", "合约养家", "K线算命大师", "波浪理论编剧", "MACD 金叉死叉复读机", "缠论野生传人",
+    "支撑位爆破专家", "阻力位站岗哨兵", "斐波那契的弃婴", "布林带上的醉汉",
+    "消息面垃圾桶", "推特治国财政部长", "回本教忠实信徒", "踏空焦虑症患者",
+    "怒火中烧的复仇者", "二级市场拾荒者", "貔貅盘的榜一大哥", "空气币品鉴专家",
+    "百倍杠杆的敢死队", "插针行情的受害者", "你不快乐", "KOL的私人提款机",
+    "付费群的资深难民", "Web3 乞丐", "除了钱什么都懂", "Web3 金融分母",
+    "美团骑手预备役", "交易所编外合伙人", "燃烧的人肉矿机", "手续费反佣机器",
+    "华尔街勤奋的穷光蛋", "光速白打工", "K线图上的缝纫机", "给交易所发工资的老板",
+    "赛博流水线工人", "流动性献祭的羔羊", "只有3秒的真男人", "深海潜水的泰坦尼克",
+    "爆仓艺术家", "逆势冲锋的敢死队", "止损键被扣掉的键盘侠", "扛单界的西西弗斯",
+    "一次归零的奇迹", "庄家最爱的发财密码", "插针行情的避雷针", "野生索罗斯",
+    "精准反向指标", "山顶洞人", "韭菜界的指路明灯", "被算法抛弃的孤儿",
+    "FOMO 情绪的接盘侠", "绿光恐惧症患者", "追涨杀跌非遗传承人", "为他人解套的活菩萨",
+    "接刀子大赛冠军", "电子古董收藏家", "垃圾分类回收站", "链上乞丐",
+    "归零守望者", "空气币品鉴大师", "庞氏骗局的最后接棒人", "梦想窒息的赞助商",
+    "貔貅盘的忠实信徒", "Web3 难民", "在垃圾堆里找黄金的炼金术士", "吃土大亨",
+    "懦弱的剥头皮者", "截断利润，让亏损奔跑", "患得患失的投机客", "被市场PUA的受虐狂",
+    "卖飞小能手", "在压路机前捡硬币的赌徒", "赢了颗粒归仓，输了倾家荡产", "账户余额粉碎机",
+    "人道主义慈善家", "金融界的分母", "被动型破产专家", "在这个市场裸奔的韭菜",
+    "行走的流动性", "除了赚钱什么都懂", "还没断奶的华尔街巨婴", "建议销户重开",
+    "多巴胺中毒晚期"
+]
+
+# ============================================================
+# 2. 医嘱金句库 (对应 UI 上的长文案 content) - 您提供的列表
+# ============================================================
+ADVICE_LIBRARY = [
+    "截断利润，让亏损奔跑。",
+    "别人恐惧我贪婪，别人贪婪我破产。",
+    "凭运气赚的钱，凭实力亏回去。",
+    "高吸低抛，别墅靠海。",
+    "不要把鸡蛋放在同一个篮子里，要每个篮子都漏一点。",
+    "趋势是你的朋友，直到它给了你一刀。",
+    "长期主义，就是套牢的代名词。",
+    "止损是不可能的，这辈子都不可能止损的。",
+    "复利是世界第八大奇迹，复亏是第九大。",
+    "时间是优秀企业的朋友，是垃圾合约的掘墓人。",
+    "又来送钱了？交易所老板的笑容由你守护。",
+    "星座运势交易员 —— “你画的线比梵高的画还抽象。”",
+    "K线图上的毕加索 —— “画得真好看，赔得真惨。”",
+    "后视镜驾驶员—— “行情走完了你才看懂，真棒。”",
+    "薛定谔的支撑位 —— “只要你不买，它就是支撑；你一买，它就是压力。”",
+    "斐波那契的弃子 —— “黄金分割线救不了你的韭菜命。”",
+    "马斯克的提线木偶—— “马斯克放个屁，你都觉得是利好。”",
+    "特朗普的提线木偶—— “特朗普放个屁，你都觉得是利好。”",
+    "内幕消息的接盘侠—— “你觉得内幕哥是你的哥？。”",
+    "鲸鱼排泄物清理员—— “大户吃肉，你负责刷盘子。”",
+    "推特治国财政部长 —— “你的投资策略全靠刷推特。”",
+    "负收益率精算师—— “怎么做到每一笔都亏得这么精准的？”",
+    "流动性慈善大使 —— “感谢你为市场流动性做出的卓越贡献。”",
+    "本金消灭术传人",
+    "用花呗加仓的赌神 —— “不仅亏钱，还欠债。”",
+    "去中心化穷人—— “你在 Web3 的唯一成就就是把钱弄丢了。”",
+    "你是在等奇迹，还是在等归零？",
+    "手里的垃圾这么沉，是准备留着过年吗？",
+    "停下来吧，你的手速越快，贫穷追上你的速度也越快。",
+    "K线图上的缝纫机 —— 哒哒哒哒操作猛如虎，一看账户原地杵。",
+    "赛博流水线工人 —— 点击鼠标的频率，赶上了厂里打螺丝的速度。",
+    "深夜盯盘的猫头鹰 —— 熬最贵的夜，亏最惨的钱。",
+    "只有3秒的真男人 —— 还没喊出“梭哈”，系统就提示“强平”。",
+    "野生索罗斯（拼夕夕版） ——只有索罗斯的亏损",
+    "不止损，就不会亏。",
+    "跌了就是补仓的机会，归零就是传家的开始。",
+    "主力在洗盘，把不坚定的筹码洗出去。",
+    "跟单大神，躺着赚钱。——躺在 ICU 里，你跟单也想发财？"
+]
+
+def format_metrics_for_llm(data):
+    v = data['vitals']
+    p = data['performance']
+    s = data['streaks']
+    a = data['assets']
+    t = data['timing']
+    d = data['direction']
+    dur = data['duration_analysis']
+
+    duration_str = ""
+    for label, info in dur.items():
+        if info['count'] > 0:
+            duration_str += f"- {label}: {info['count']}笔, 盈亏{info['pnl']:.1f}U, 胜率{info['win_rate']*100:.0f}%, Top币种:{', '.join(info['top_coins'])}\n"
+    
+    long_info = d.get('long', {'count': 0, 'pnl': 0})
+    short_info = d.get('short', {'count': 0, 'pnl': 0})
+
+    top5_str = ", ".join([f"{x['Symbol']}({x['Net PnL']:.0f}U)" for x in a['top_5']])
+    bot5_str = ", ".join([f"{x['Symbol']}({x['Net PnL']:.0f}U)" for x in a['bottom_5']])
+    
+    hourly = t['hourly_pnl']
+    if hourly:
+        best_h = max(hourly, key=hourly.get)
+        worst_h = min(hourly, key=hourly.get)
+        time_str = f"最佳{best_h}点(赚{hourly[best_h]:.0f}U), 最差{worst_h}点(亏{hourly[worst_h]:.0f}U)"
+    else:
+        time_str = "无数据"
+
+    return f"""
+    【1. 资金体征】
+    - 净利润: {v['net_pnl']:.2f} U
+    - 毛盈亏: {v['gross_pnl']:.2f} U
+    - 估算手续费: {v['total_fees']:.2f} U
+    - 真实亏损(割肉): {v['real_loss']:.2f} U
+    - 真实盈利(止盈): {v['real_profit']:.2f} U
+    - 总交易额: {v['volume']:.2f} U
+    - 时薪: {v['hourly_wage']:.2f} U/hr
+    - 交易频率: {v['frequency']:.2f} 单/天
+    
+    【2. 核心绩效】
+    - 胜率: {p['win_rate']*100:.2f}%
+    - 盈亏比: {p['rr_ratio']:.2f}
+    - 利润因子: {p['profit_factor']:.2f}
+    - 单单期望值: {p['expectancy']:.2f} U
+    - 持仓效率: {p['avg_efficiency']:.4f} U/min
+    
+    【3. 风格与偏好】
+    - 多空: 多{long_info['count']}笔({long_info['pnl']:.0f}U) vs 空{short_info['count']}笔({short_info['pnl']:.0f}U)
+    - 最佳交易日: {t['best_day']}
+    - 最差交易日: {t['worst_day']}
+    - 黄金/垃圾时间: {time_str}
+    
+    【4. 持仓分布】
+    {duration_str}
+    
+    【5. 资产偏好】
+    - 提款机(Top5): {top5_str}
+    - 碎钞机(Bottom5): {bot5_str}
+    
+    【6. 极值风控】
+    - 最大连胜: {s['max_win']['count']}次(赚{s['max_win']['amount']:.0f}U), 功臣:{', '.join(s['max_win']['heroes'])}
+    - 最大连败: {s['max_loss']['count']}次(亏{s['max_loss']['amount']:.0f}U), 罪魁:{', '.join(s['max_loss']['culprits'])}
+    - 单笔最大盈利: {s['max_win']['amount']:.2f} U
+    - 单笔最大亏损: {s['max_loss']['amount']:.2f} U
+    """
+
+def init_model():
+    candidates = ['gemini-1.5-pro', 'gemini-1.5-flash']
+    for m in candidates:
+        try:
+            model = genai.GenerativeModel(m)
+            return model, m
+        except:
+            continue
+    return genai.GenerativeModel('gemini-1.5-flash'), 'gemini-1.5-flash'
+
+model, current_model_name = init_model()
 
 app = FastAPI()
 
-# 允许前端跨域访问 (Zeabur部署时很重要)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # 生产环境可以改成你的前端域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,168 +179,115 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "message": "Crypto Psychiatrist API is running"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+    return {"status": "online", "model": current_model_name}
 
 @app.post("/analyze")
 async def analyze_csv(file: UploadFile = File(...)):
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed")
-
     try:
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
-
-        # 1. 运行数据分析
+        
+        # 1. 计算
         analyzer = TradeAnalyzer(df)
         data = analyzer.get_analysis_json()
+        
+        # 2. 生成元数据
+        rand_head = ''.join(random.choices('0123456789ABCDEF', k=4))
+        rand_tail = ''.join(random.choices('0123456789ABCDEF', k=4))
+        patient_id = f"0x{rand_head}****{rand_tail}"
+        
+        # 随机选 3 个短标签 (用于 badges)
+        selected_tags = random.sample(TAGS_LIBRARY, 3)
+        
+        # 🚨 随机选 1 个长医嘱金句 (用于 content)
+        selected_advice = random.choice(ADVICE_LIBRARY)
+        
+        data['meta'] = {
+            "patient_id": patient_id,
+            "tags": selected_tags,
+            "advice": selected_advice # 存入 raw_data 备用
+        }
 
-        # 2. 构建 Prompt
-        # 使用新的数据结构
-        vitals = data.get('vitals', {})
-        performance = data.get('performance', {})
-        duration_analysis = data.get('duration_analysis', {})
-        assets = data.get('assets', {})
-        streaks = data.get('streaks', {})
+        # 3. 准备 Prompt 数据
+        metrics_text = format_metrics_for_llm(data)
         
-        # 提取关键数据
-        net_pnl = vitals.get('net_pnl', 0)
-        mode = "Mode A (亏损)" if net_pnl < 0 else "Mode B (盈利)"
-        hourly_wage = vitals.get('hourly_wage', 0)
-        trade_count = vitals.get('trade_count', 0)
-        win_rate = performance.get('win_rate', 0) * 100  # 转换为百分比
-        
-        # 提取持仓时间分析
-        scalping_info = duration_analysis.get('超短线 (5-15m)', {})
-        scalping_count = scalping_info.get('count', 0)
-        scalping_pnl = scalping_info.get('pnl', 0)
-        
+        user_type = "盈利用户 (高手)" if data['vitals']['net_pnl'] > 0 else "亏损用户 (韭菜)"
+
+        # ==========================================
+        # 4. 终极 Prompt 注入
+        # ==========================================
         system_prompt = f"""
-        你是一位拥有 20 年经验的华尔街顶级风险控制专家，也是一位"币圈精神科急诊室"的毒舌主治医生。你的风格混合了《大空头》的 Mark Baum 和《华尔街之狼》的 Jordan Belfort——犀利、幽默、极度直白 甚至带有攻击性。你也像拿着显微镜的外科医生，擅长严格按以下逻辑进行解剖。
-        【患者数据】
-        总盈亏: {net_pnl:.2f} U
-        模式: {mode}
-        时薪: {hourly_wage:.2f} U/小时
-        交易次数: {trade_count} 次
-        胜率: {win_rate:.1f}%
-        超短线表现: 交易 {scalping_count} 次，盈亏 {scalping_pnl:.2f} U
-        盈亏比: {performance.get('rr_ratio', 0):.2f}
-        利润因子: {performance.get('profit_factor', 0):.2f}
-        最大连胜: {streaks.get('max_win', {}).get('count', 0)} 次，金额 {streaks.get('max_win', {}).get('amount', 0):.2f} U
-        最大连败: {streaks.get('max_loss', {}).get('count', 0)} 次，金额 {streaks.get('max_loss', {}).get('amount', 0):.2f} U
-        
-        ### **【分析框架】**
+        【角色设定】
+        你是一位拥有 20 年经验的华尔街顶级交易员和心理学博士，也是"币圈精神科急诊室"的主治医生。
+        风格:混合了《大空头》Mark Baum 的犀利和《华尔街之狼》Jordan Belfort 的毒舌。
+        核心任务：阅读数据，生成诊断报告。严格输出 Markdown,严禁 markdown 代码块包裹。
 
-请严格按以下步骤输出，确保数据精准，语言犀利：
+        【当前患者数据】
+        {metrics_text}
 
-### **[1. 核心诊断 & 身份]**
+        【当前模式判定】
+        患者状态：{user_type}
+        如果是净利润为正的用户：态度专业、尊重但傲娇（同行切磋），提醒黑天鹅风险。
+        如果是净利润为负的用户：态度极度毒舌，恨铁不成钢，用数据打脸，拒绝废话。
 
-- **必须动作**:给用户贴3-5 个极具侮辱性或带有讽刺意味的“荣誉称号”（短标签，取值自“短标签库”），根据用户数据情况自行拟定匹配。**适合做UI徽章/贴纸）**
-- 摆出实际的分析数据。
+        请严格按照以下 6 个章节标题输出内容（标题文字严禁修改，前端据此切片）：
 
-### **[2. 深度病情解剖] (核心部分)**
+        # 1. 核心诊断
+        ## 病理切片解读
+        (分析最大单笔盈利 {data['streaks']['max_win']['amount']} U 与最大单笔亏损 {data['streaks']['max_loss']['amount']} U 的倍数关系。结合持仓效率 {data['performance']['avg_efficiency']:.4f} U/min。像病理切片一样分析他是否有开单恶习或高压无效劳动。50-150字)
+        ## 初诊报告
+        (全页总结。重点提及总手续费 {data['vitals']['total_fees']} U。如果是亏损用户,重点打击。300字左右,合理分段)
 
-说一句相对应的总结，比如“数据展示了你令人震惊的分裂表现…”，要能调用对方情绪的
+        # 2. 人体扫描室
+        ## 持仓画像
+        (根据[4. 持仓分布]数据,深度分析他的持仓规律.200字左右)
+        ## 周度节律
+        (根据最佳/最差交易日和黄金/垃圾时间,分析他的情绪节律。50-100字)
 
-**2.1 交易风格画像** 
+        # 3. 解剖台
+        ## [请生成一个警示性短标题，如'温水煮青蛙']
+        (针对最大连败 {data['streaks']['max_loss']['count']} 次进行深度侧写。100-200字)
+        ## 有毒资产
+        (总结碎钞机 Top5 资产。150字以内)
+        ## 深度解剖
+        (第一刀-心态：分析数据背后的贪婪/恐惧；第二刀-技术：分析开平仓问题；第三刀-策略:分析宏观错误。共500字内)
 
-- 分析他是做高频还是趋势。
-- 频率分析：分析数据是否是高频交易、人工交易，情绪化操作或剥头皮等等。亦或低频交易等
-- 持仓时间分析：对比“超短线（<15分钟)”和“波段（>1小时)、()>4小时)、()>12小时)”的盈亏表现,找出我的“死亡禁区”。
-- 结合胜率和频率，给出一个精准的画像标签。
-- **对亏损者**：骂他“操作猛如虎，一看原地杵”。高频是给交易所送钱。
-- **对盈利者**：如果他是高胜率低盈亏比，嘲讽他是“在压路机前捡硬币”；如果他是低胜率高盈亏比，勉强承认他“有点东西”。
-- **毒性/运气检测 :币种分析,**如果玩 Meme/土狗：赢了是“坟头蹦迪”，输了是“智商税”。如果玩 BTC/ETH:输了是“技术太菜”,赢了是“贝塔红利（Beta）”，不是他的阿尔法（Alpha）。
+        # 4. 废墟下的黄金
+        (语气转折：变得温暖、惜才、激励。寻找废墟中的黄金。)
+        ## 高光时刻
+        (基于盈利数据、连胜或某个高胜率区间,挖掘他的盈利舒适区。鼓励他。200字左右)
 
-**2.2 死亡禁区 / 利润漏洞** 
+        # 5. 抢救处方
+        ## 警告
+        (针对当前状态的严重警告。50字)
+        ## 康复计划
+        (制定分阶段计划。必须计算：如果你在一个有返佣的渠道(省下40%手续费），你现在的账户应该多出 {data['vitals']['total_fees'] * 0.4:.2f} U。500字以内)
+        ## 严禁事项
+        (200字以内)
+        ## 总结
+        (300字以内)
 
-- **针对亏损者（死亡禁区）**:
-    - **核心任务**：要让【死亡禁区】这个模块产生痛感，要摧毁他的坏习惯。
-    - **把“亏损”具象化**：不仅仅是数字，而是他生活中的一部分被切掉了。
-    - **把“努力”荒诞化**：他最引以为傲的“勤奋盯盘”，其实是自杀行为。
-    - **制造剧烈的反差**：天堂（盈利的波段）和地狱（亏损的超短线）就在一念之间。
-    
-    多逻辑组合使用，比如强调“高频低效”，羞辱他的“勤奋”；比如强调他原本可以赚多少，是他自己亲手毁了这一切。利用“损失厌恶”心理；比如把他定义为“病人”，让他感到羞耻。
-    
-    比如
-    
-    - 先用 **方案 B** 告诉他“你本来很牛逼，是你自己毁了”（给希望后瞬间破灭）。
-    - 再用 **方案 A** 算出他的“时薪是负数”（现实打脸）。
-    - 最后用 **方案 C** 总结“你这是病，得治”（升华主题）。
-    - 详细分析他亏损最惨烈的行为模式。是“高频剥头皮”？是“扛单不止损”？还是“赌土狗”？
-    
-    - 等等更多恶劣的交易习惯
-    
-    - 计算或估算交易频率,结合Taker费率,用户到底给交易所交了多少“智商税”。比如币安市价通常单词操作是万5
-    - 用毒舌的语言摧毁这种行为的合理性。
-    
-    - 观察胜率与盈亏的平衡。如果胜率低 (<40%) 但盈利，说明他是“趋势型/盈亏比型”选手，这是好事，在圣杯中肯定他要肯定。如果胜率高 (>70%) 但亏损，说明他是“扛单型”选手（赚小赔大），这是致命伤，要严厉批评。
-    
-- **针对盈利者（利润漏洞）**:
-    - 找出他**回撤最大**或**利润回吐**最严重的习惯。
-    - 计算“踏空成本”或“回吐金额”。告诉他：“你本来赚了 5 万，因为手贱吐回去 2 万。你不是在赚钱，你是在漏财。”
-    - 嘲讽他的风控：“你的夏普比率低得可怜，只要一次极端行情，你就会回到解放前。”
-
-**2.3 你的圣杯**（重点分析，这里相对内容多些）
-
-- **核心任务**：寻找废墟中的黄金，给他希望的关键！做数据切割，找到他哪怕一点点的优势。即使他亏得一塌糊涂，也要试图从逻辑上找到他的“盈利舒适区”。
-- 假设（你需要根据数据多逻辑去推演）：
-- “虽然你玩山寨币亏了，但如果你只看 ETH,你其实是赚的。”
-- “虽然你频繁止损，但你那几笔大赚的单子证明你懂趋势。”
-- “你的胜率低，但盈亏比高，说明你只需要减少出手次数就能活。”
-
--…等等更多，请从交割单的数据找到他的擅长！
-- **必须明确指出他的优势在哪里**，告诉他：“你离盈利只差‘砍掉坏习惯’这一步。”甚至可以画饼，比如如果你没有这些 xxx 的亏损，你的账户应该是盈利 xxx 的！
-
-- **针对盈利者**:
-    - 类似，但要符合对盈利者的逻辑
-
-### **[3. 拯救处方]**
-
-- **针对亏损者（拯救）**:
-    - -给出具体建议（如：限制每天开单数、换低费率交易所、只做主流等、只做长线等等根据数据来）。
-    - 如果手续费过高且他是亏损的,告诉他强迫自己使用低手续费的限价单,少用市价单,另外在建议里告诉他,“如果你在一个有返佣的渠道(省下30%手续费），你现在的账户余额应该是多少？”
-    - 制定一个分阶段的“康复计划”。
-    - 做给后一个结语，如果是亏损者，要用振奋的话语给他激励，前面骂了那么多了，这里说的好好听感人点，亏损者最怕的就是没有希望！
-- **针对盈利者（警告）**:
-    - 给出高级建议（如：资金管理、仓位对冲、提取利润）。
-    - 警告他：“市场最喜欢杀你这种觉得自己懂了的人。提现买房才是赚，放在账户里只是数字。别让我下个月在维权群里看到你。”
-
-### 
-
----
-
-### **【约束条件】**
-
-1. **禁止客套**：绝对不要说“亲爱的用户”、“您做得很好”。
-2. **数据驱动**：所有的嘲讽必须基于 csv 中的具体数据
-3. **篇幅控制**:1200 - 2500 字，字字珠玑。) ...
-
-        请严格按照 Markdown 格式输出，最后必须包含 [4. 币圈精神病确诊通知书] 的 JSON 格式以便前端渲染。
+        # 6. 确诊通知书
+        (必须输出纯 JSON 格式，不要包含 ```json 标记)
+        {{
+            "id": "{patient_id}",
+            "title": "请根据数据生成一个4-6字的搞笑确诊病症",
+            "badges": {json.dumps(selected_tags, ensure_ascii=False)},
+            "content": "{selected_advice}"
+        }}
         """
+        # 注意：上方 content 字段这里，我们直接填入了 Python 随机选好的金句 selected_advice
+        # 这样 LLM 就不会瞎写了，而是直接把我们指定的金句吐出来给前端。
 
-        # 3. 调用 Gemini
-        print(f"[DEBUG] 调用 Gemini API，数据: {data}")
+        # 5. 调用 LLM
         response = model.generate_content(system_prompt)
-        print(f"[DEBUG] Gemini 响应类型: {type(response)}")
-        print(f"[DEBUG] Gemini 响应文本长度: {len(response.text) if response.text else 0}")
-        
-        if not response.text:
-            raise ValueError("Gemini API 返回了空响应")
         
         return {"report": response.text, "raw_data": data}
 
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"[ERROR] 处理请求时出错: {str(e)}")
-        print(f"[ERROR] 错误堆栈: {error_trace}")
-        return {"error": str(e), "traceback": error_trace}
+        print(f"Error: {str(e)}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", "8080"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

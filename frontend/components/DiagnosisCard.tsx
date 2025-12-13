@@ -49,12 +49,12 @@ export function DiagnosisCard({ data }: DiagnosisCardProps) {
             <div className="flex flex-wrap gap-2 flex-1">
               {tags.length > 0 ? (
                 tags.map((tag, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-block px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-sm font-medium"
-                  >
-                    {tag}
-                  </span>
+                <span
+                  key={idx}
+                  className="inline-block px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-sm font-medium"
+                >
+                  {tag}
+                </span>
                 ))
               ) : (
                 <span className="text-muted-foreground text-sm">暂无标签</span>
