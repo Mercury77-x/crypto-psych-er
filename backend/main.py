@@ -17,7 +17,7 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 # ============================================================
-# 1. 标签库 (对应 UI 上的短标签 badges)
+# 1. 标签库 (保留您扩充后的版本)
 # ============================================================
 TAGS_LIBRARY = [
     "韭菜", "燃烧的矿机", "慈善赌王", "追涨杀跌小能手", "多巴胺中毒",
@@ -46,7 +46,7 @@ TAGS_LIBRARY = [
 ]
 
 # ============================================================
-# 2. 医嘱金句库 (对应 UI 上的长文案 content)
+# 2. 医嘱金句库 (保留您扩充后的版本)
 # ============================================================
 ADVICE_LIBRARY = [
     "截断利润，让亏损奔跑。",
@@ -90,7 +90,7 @@ ADVICE_LIBRARY = [
 ]
 
 # ============================================================
-# 3. 辅助函数：手续费现实映照 (Python 硬算)
+# 3. 辅助函数：手续费现实映照 (保留您的详细逻辑)
 # ============================================================
 def calculate_luxury_equivalent(fees):
     fees = abs(fees)
@@ -171,13 +171,14 @@ def calculate_luxury_equivalent(fees):
             "这是一次标准的“Rug Pull”卷走的平均金额",
             "够巴菲特那顿慈善午餐的入场费",
         ])
-    if fees < 6000000: return random.choice([
+    # 默认保底
+    return random.choice([
             "够马斯克发一枚火箭上火星听个响",
              "这手续费高到可以帮 FTX 还债了",
              "够买个太平洋小岛宣布建国，自己发币当央行行长",
              "别算了，这已经是很多上市公司一年的净利润了"
         ])
- 
+
 def format_metrics_for_llm(data):
     v = data['vitals']
     p = data['performance']
@@ -197,6 +198,7 @@ def format_metrics_for_llm(data):
     }
     duration_str = ""
     for k, label in dur_map.items():
+        # 安全获取，防止 key 不存在报错
         info = dur.get(k, {'count': 0, 'pnl': 0, 'win_rate': 0, 'top_coins': []})
         if info['count'] > 0:
             duration_str += f"- {label}: {info['count']}笔, 盈亏{info['pnl']:.1f}U, 胜率{info['win_rate']*100:.0f}%, Top币种:{', '.join(info['top_coins'])}\n"
@@ -254,31 +256,27 @@ def format_metrics_for_llm(data):
     """
 
 def init_model():
-    # 按照"能力由强到弱"和"版本由新到旧"的顺序排列
-    # 优先尝试 Gemini 3 Pro (最新最强)
-    # 如果失败，尝试 Gemini 2.5 Pro/Flash (当前主流稳定版)
-    # 最后尝试 Gemini 2.0 Flash (上一代稳定版)
+    # ============================================================
+    # 4. 模型配置 (严格保留您的版本)
+    # ============================================================
     candidates = [
         'gemini-3-pro-preview',   # 最新一代：推理能力最强
         'gemini-2.5-pro',         # 次新旗舰：非常稳定
         'gemini-2.5-flash',       # 次新高速：速度快，成本低
         'gemini-2.0-flash',       # 旧版高速：广泛兼容
-        'gemini-1.5-pro-latest'   # 最后的兜底 (如果还需要的话)
+        'gemini-1.5-pro-latest'   # 最后的兜底
     ]
     
     for m in candidates:
         try:
             model = genai.GenerativeModel(m)
-            # 简单的测试调用，确保模型真的可用（可选）
-            # model.generate_content("test") 
+            # 简单的测试调用，确保模型真的可用
             print(f"[INFO] ✅ 模型初始化成功: {m}")
             return model, m
         except Exception as e:
-            # 打印错误方便调试，但不要中断程序
             print(f"[WARN] ⚠️ 无法加载 {m}: {e}")
             continue
     
-    # 如果所有尝试都失败，返回一个目前最通用的保底模型
     fallback_model = 'gemini-1.5-flash'
     print(f"[WARN] ⚠️ 所有候选模型都失败，回退到保底模型: {fallback_model}")
     return genai.GenerativeModel(fallback_model), fallback_model
@@ -305,7 +303,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
         
-        # 1. 计算 (analyzer 已经是最新的完整版)
+        # 1. 计算
         analyzer = TradeAnalyzer(df)
         data = analyzer.get_analysis_json()
         
@@ -317,7 +315,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         selected_tags = random.sample(TAGS_LIBRARY, 3)
         selected_advice = random.choice(ADVICE_LIBRARY)
         
-        # 🚨 计算手续费现实映照 (Python 硬算)
+        # 🚨 计算手续费现实映照 (调用您的详细函数)
         luxury_item = calculate_luxury_equivalent(data['vitals']['total_fees'])
         
         # 补充到 meta 字段，前端直接读
@@ -334,7 +332,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         user_type = "盈利用户 (高手)" if data['vitals']['net_pnl'] > 0 else "亏损用户 (韭菜)"
 
         # ==========================================
-        # 4. 终极 Prompt 注入
+        # 5. 终极 Prompt 注入 (严格按照您的要求)
         # ==========================================
         system_prompt = f"""
         【角色设定】
@@ -399,7 +397,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         }}
         """
 
-        # 5. 调用 LLM
+        # 6. 调用 LLM
         response = model.generate_content(system_prompt)
         
         return {"report": response.text, "raw_data": data}
